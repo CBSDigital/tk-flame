@@ -319,6 +319,8 @@ class FlameLoaderActions(HookBaseClass):
             else:
                 raise FlameLoaderActionError("No setup to load")
 
+            # @TODO tack on an extra write node for the editorial and matte precursors
+
     ################################################################################################
     # interface to the action hook configuration
 
@@ -552,6 +554,8 @@ class FlameLoaderActions(HookBaseClass):
                     self.parent.log_warning("Unable to load '%s'" % clip["path"])
             else:
                 self.parent.log_warning("File not found on disk - '%s'" % clip["path"])
+
+
 
         flame.batch.organize()
 

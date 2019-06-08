@@ -14,6 +14,10 @@ import sgtk
 
 HookBaseClass = sgtk.get_hook_baseclass()
 
+# CBSD Customization
+# ==================================
+FLAME_QUICKTIME_PUB_TYPE = "Flame Quicktime"
+# ==================================
 
 class CreatePublishPlugin(HookBaseClass):
     """
@@ -171,25 +175,58 @@ class CreatePublishPlugin(HookBaseClass):
             "thumbnail_path": item.get_thumbnail_as_path(),
         }
 
+        # CBSD Customization
+        # ==================================
+        #
+        # Also create a publish for a quicktime if one was generated
+        # by our customized `create_version.py` plugin.
+        #
         # Create the PublishedFile
-        published_file = sgtk.util.register_publish(**publish_data)
+        main_published_file = sgtk.util.register_publish(**publish_data)
 
-        # Create a Thumbnail in Background for compatible Flame related PublishedFile
-        if item.display_type in ["Flame OpenClip", "Flame Render", "Flame Batch OpenClip"]:
-            # For file sequences, the hooks we want the path as provided by flame.
-            path = item.properties.get("file_path", path)
+        published_files = [main_published_file, ]
 
-            # Create the Image thumbnail in background
-            self.engine.thumbnail_generator.generate(
-                display_name=item.name,
-                path=path,
-                dependencies=item.properties.get("backgroundJobId"),
-                target_entities=[published_file],
-                asset_info=asset_info
-            )
+        # Build the PublishedFile metadata
+        quicktime_name = item.properties.get("quicktime_name")
+        quicktime_path = item.properties.get("quicktime_path")
+        if quicktime_name and quicktime_path:
+            qt_publish_data = {
+                "tk": self.publisher.sgtk,
+                "context": item.context,
+                "comment": item.description,
+                "entity": item.context.entity,
+                "path": quicktime_path,
+                "name": quicktime_name,
+                "code": quicktime_name,
+                "description": item.description,
+                "version_number": version_number,
+                "published_file_type": FLAME_QUICKTIME_PUB_TYPE,
+                "version_entity": item.properties.get("Version"),  # Available if the CreateVersionPlugin was enabled
+                "thumbnail_path": item.get_thumbnail_as_path(),
+            }
+
+            # Create the PublishedFile
+            quicktime_published_file = sgtk.util.register_publish(**qt_publish_data)
+            published_files.append(quicktime_published_file)
+
+        for published_file in published_files:
+            # Create a Thumbnail in Background for compatible Flame related PublishedFile
+            if item.display_type in ["Flame OpenClip", "Flame Render", "Flame Batch OpenClip", "Flame Quicktime"]:
+                # For file sequences, the hooks we want the path as provided by flame.
+                path = item.properties.get("file_path", path)
+
+                # Create the Image thumbnail in background
+                self.engine.thumbnail_generator.generate(
+                    display_name=item.name,
+                    path=path,
+                    dependencies=item.properties.get("backgroundJobId"),
+                    target_entities=[published_file],
+                    asset_info=asset_info
+                )
 
         # Save the PublishedFile for the others plugins
-        item.properties["PublishedFile"] = published_file
+        item.properties["PublishedFile"] = main_published_file
+        # ==================================
 
     def finalize(self, settings, item):
         """

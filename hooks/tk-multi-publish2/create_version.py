@@ -189,15 +189,75 @@ class CreateVersionPlugin(HookBaseClass):
 
         dependencies = item.properties.get("backgroundJobId")
 
-        # Create the Movie preview in background
+        # CBSD Customization
+        # ==================================
+        # Create the Movie in background
         # (Thumbnail will be generated server-side from movie)
-        self.engine.thumbnail_generator.generate(
-            display_name=item.name,
-            path=file_path,
+        #
+        # Instead of using the normal preview generator for a low quality quicktime,
+        # Create and Publish a deliverable quicktime based on Project Settings in Shotgun
+
+        quicktime_name = os.path.split(path)[1].split(".")[0] + ".mov"
+        quicktime_path = os.path.join(os.path.dirname(path), quicktime_name)
+
+        quicktime_job = self.generate_quicktime(
+            display_name=quicktime_name,
+            src_path=file_path,
+            dst_path=quicktime_path,
             dependencies=dependencies,
             target_entities=[version],
-            asset_info=asset_info)
+            asset_info=asset_info
+        )
 
+        item.properties["quicktime_name"] = quicktime_name
+        item.properties["quicktime_path"] = quicktime_path
+        item.properties["quicktime_job"] = quicktime_job
+        # ==================================
+
+    # CBSD Customization
+    # ==================================
+    def _upload_quicktime_job(self, quicktime_job):
+        """
+        Create a Backburner job to upload a preview and link it to entities.
+
+        Copied from `tk_flame.ThumbnailGeneratorFlame` and modified to call alternate hook
+        to copy the quicktime movie from the `engine.get_backburner_tmp()` location to the
+        Comp's renders folder.
+
+        :param quicktime_job: Quicktime generation job information.
+        :return: Backburner job ID created.
+        """
+        field_name = "sg_uploaded_movie"
+
+        job_context = "Move and Upload Flame Quicktime"
+        job_name = self.engine.sanitize_backburner_job_name(
+            job_name=quicktime_job.get("display_name"),
+            job_suffix=" - %s" % job_context
+        )
+        job_description = "%s for %s\n %s" % (
+            job_context,
+            quicktime_job.get("display_name"),
+            quicktime_job.get("path")
+        )
+
+        return self.engine.create_local_backburner_job(
+            job_name=job_name,
+            description=job_description,
+            dependencies=quicktime_job.get("dependencies"),
+            instance="backburner_hooks",
+            method_name="copy_from_temp_and_upload_to_shotgun",
+            args={
+                "targets": quicktime_job.get("target_entities"),
+                "path": quicktime_job.get("path"),
+                "field_name": field_name,
+                "display_name": quicktime_job.get("display_name"),
+                "files_to_delete": quicktime_job.get("files_to_delete")
+            }
+        )
+    # ==================================
+
+    # CBSD Customization
+    # ==================================
     def finalize(self, settings, item):
         """
         Execute the finalization pass. This pass executes once
@@ -210,7 +270,67 @@ class CreateVersionPlugin(HookBaseClass):
         :param item: Item to process
         """
 
-        path = item.properties.get("path", None)
-        file_path = item.properties.get("file_path", path)
+        # A Given path can have both a thumbnail or a preview to upload since
+        # not all entity type support a preview upload
+        quicktime_job = item.properties.get("quicktime_job")
+        if quicktime_job:
+            return self._upload_quicktime_job(quicktime_job)
+    # ==================================
 
-        self.engine.thumbnail_generator.finalize(path=file_path)
+    # CBSD Customization
+    # ==================================
+    def generate_quicktime(self, src_path, dst_path, display_name, target_entities, asset_info, dependencies):
+        """
+        Generate a local movie file from a Flame exported assets and link
+        it to a list of Shotgun entities in the Path to movie field.
+
+        :param src_path: Path to the media for which a local movie need to be
+            generated and linked to Shotgun.
+        :param dst_path: Path to local movie file to generate.
+        :param display_name: The display name of the item we are generating the
+            movie for. This will usually be the based name of the path.
+        :param target_entities: Target entities to which the movie need to
+            be linked to.
+        :param asset_info: Dictionary of attribute passed by Flame's python
+            hooks collected either thru an export (sg_export_hooks.py) or a
+            batch render (sg_batch_hooks.py).
+        :param dependencies: List of backburner job IDs this movie file
+            generation job need to wait in order to be started. Can be None if
+            the media is created in foreground.
+        """
+        (dst_path, job_id, files_to_delete) = self.engine.transcoder.transcode(
+            src_path=src_path,
+            dst_path=dst_path,
+            extension=os.path.splitext(dst_path)[-1],
+            display_name=display_name,
+            job_context="Create Shotgun Local Movie",
+            # @TODO get the preset to use from a field somewhere in Shotgun.
+            preset_path=self.engine.local_movies_preset_path,
+            asset_info=asset_info,
+            dependencies=dependencies,
+            poster_frame=None
+        )
+
+        self.engine.create_local_backburner_job(
+            job_name="%s - Updating Shotgun Path to movie" % display_name,
+            description="Uploading Shotgun Path to movie to %s" % dst_path,
+            dependencies=job_id,
+            instance="backburner_hooks",
+            method_name="update_path_to_movie",
+            args={
+                "targets": target_entities,
+                "path": dst_path,
+                "files_to_delete": files_to_delete
+            }
+        )
+
+        quicktime_job = {
+            "display_name": display_name,
+            "dependencies": job_id,
+            "target_entities": target_entities,
+            "path": dst_path,
+            "files_to_delete": files_to_delete
+        }
+
+        return quicktime_job
+    # ==================================

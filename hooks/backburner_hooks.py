@@ -223,3 +223,42 @@ class BackburnerHooks(HookBaseClass):
 
         # Return the original dimension if all the above fail
         return width, height
+
+    # CBSD Customization
+    # ==================================
+    # Copied from above method `upload_to_shotgun` and modified
+    # to include an additional copy step
+    def copy_from_temp_and_upload_to_shotgun(self, path, targets, field_name, display_name, files_to_delete):
+        """
+        Copy a quicktime from the temp directory to a server location and
+        upload a file to Shotgun, link it to the targets and delete the temp file.
+
+        :param path: Media file to upload.
+        :param targets: Shotgun entities to be linked to the file.
+        :param field_name: The internal Shotgun field name on the entity to
+            store the file in. This field must be "thumb_image" (if image) or
+            "sg_uploaded_movie" (if movie).
+        :param display_name: The display name to use for the file.
+        :param files_to_delete: List of files to be deleted upon successful
+            upload to Shotgun.
+        """
+
+        # @TODO Use a template to define the destination location of the quicktime
+        quicktime_name = os.path.split(path)[1]
+        temp_location = sgtk.platform.current_engine().get_backburner_tmp()
+        temp_quicktime = os.path.join(temp_location, quicktime_name)
+        sgtk.util.filesystem.copy_file(temp_quicktime, path)
+        files_to_delete.append(temp_quicktime)
+
+        for target in targets:
+            self.parent.shotgun.upload(
+                entity_type=target["type"],
+                entity_id=target["id"],
+                path=path,
+                field_name=field_name,
+                display_name=display_name
+            )
+        if files_to_delete is not None:
+            for file_to_delete in files_to_delete:
+                sgtk.util.filesystem.safe_delete_file(file_to_delete)
+    # ==================================
