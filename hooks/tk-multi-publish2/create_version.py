@@ -197,6 +197,7 @@ class CreateVersionPlugin(HookBaseClass):
         # Instead of using the normal preview generator for a low quality quicktime,
         # Create and Publish a deliverable quicktime based on Project Settings in Shotgun
 
+        # @TODO Use a template to define the destination location of the quicktime
         quicktime_name = os.path.split(path)[1].split(".")[0] + ".mov"
         quicktime_path = os.path.join(os.path.dirname(path), quicktime_name)
 

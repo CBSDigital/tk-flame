@@ -243,7 +243,7 @@ class BackburnerHooks(HookBaseClass):
             upload to Shotgun.
         """
 
-        # @TODO Use a template to define the destination location of the quicktime
+        # @TODO Is there a risk of collisions/mistakes here?
         quicktime_name = os.path.split(path)[1]
         temp_location = sgtk.platform.current_engine().get_backburner_tmp()
         temp_quicktime = os.path.join(temp_location, quicktime_name)
